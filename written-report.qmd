@@ -1,0 +1,1329 @@
+---
+title: "Written Report"
+author: "Team 4: Angela Chen, Chenye Zhu, Amy Liu, Justin Pan"
+date: "11-02-24"
+format: pdf
+fontsize: 11pt
+geometry: margin = 1in
+latex_engine: xelatex
+execute: 
+  warning: false
+  message: false
+  echo: false
+editor: visual
+bibliography: references/references.bib
+---
+
+```{r}
+#| label: load packages and data
+#library(tidyverse)
+#library(tidymodels)
+#library(knitr)
+# add other packages as needed
+#library(ggplot2)
+#install.packages("psych")
+#library(psych)
+#library(GGally)
+#library(patchwork)
+#install.packages('car')
+#library(car)
+#install.packages("pROC")
+#library(pROC)
+#install.packages("gridExtra")
+#library(gridExtra)
+#install.packages("caret")
+#library(caret)
+#install.packages("kableExtra")
+#library(kableExtra)
+
+if (!require("pacman")) {
+  install.packages("pacman")
+  library(pacman) 
+} 
+p_load(tidyverse, tidymodels, knitr, ggplot2, psych, GGally,
+       patchwork, car, pROC, gridExtra, caret, kableExtra)
+
+# add code to load data
+diabetes <- read.csv("data/Healthcare-Diabetes.csv")
+
+```
+
+# Introduction and EDA
+
+```{r}
+diabetes <- diabetes |>
+  mutate(Age_Groups = cut(Age, breaks = c(0, 30, 60, 100),
+                          labels = c("Young (0-29 years)", "Middle (30-59 years)", "Old (60-99 years)")))
+diabetes <- diabetes |>
+  mutate(Glucose_level = cut(Glucose, breaks = c(0, 50, 100, 150, 200),
+                              labels = c("0-50", "50-100", "100-150", "150-200"),
+                              include.lowest = TRUE,
+                             right = FALSE))  # Include right endpoint
+diabetes <- diabetes |>
+  mutate(BMI_level = cut(BMI, breaks=5,
+                              labels = FALSE,
+                              include.lowest = TRUE,
+                             right = FALSE))  # Include right endpoint
+
+diabetes <- diabetes |>
+  mutate(BloodPressure_level = cut(BloodPressure, breaks=5,
+                              labels = FALSE,
+                              include.lowest = TRUE,
+                             right = FALSE))  # Include right endpoint
+
+diabetes <- diabetes |>
+  mutate(DiabetesPedigreeFunction_level = cut(DiabetesPedigreeFunction, breaks=5,
+                              labels = FALSE,
+                              include.lowest = TRUE,
+                             right = FALSE))  # Include right endpoint
+
+```
+
+## Introduction
+
+Diabetes is a chronic disease characterized by persistently high blood glucose levels due to insufficient insulin production (Type 1, \~ 5% of cases) or ineffective insulin use (Type 2, 90-95% of cases)[@bullard2018]. The International Diabetes Federation estimates 10.5% of adults aged 20-79 lives with diabetes, with nearly half unaware of their condition. Common diagnostic tests include plasma glucose, which measures glucose after fasting, and the A1C test, which measures average glucose over 2-3 months. High-risk groups for Type 2 diabetes include individuals aged 35 or older, women who have experienced gestational diabetes, those with a family history, people who are overweight or obese, and certain racial and ethnic groups (NIDDK 2023).
+
+Recent studies have advanced our understanding of the risk factors and dynamics of diabetes. For example, research conducted by Shuguang Hospital in China found significant interactions between age and other risk factors, influencing diabetes risk among middle-aged and elderly populations in Shanghai [@yan2023]. Another study by Hubert Kolb and Stephan Martin focused on how lifestyle and environmental factors can increase body mass index (BMI) and lead to the loss of beta-cell function, a direct precursor to diabetes. [@kolb2017]
+
+This study investigates the relationship between glucose levels, various risk factors, and the likelihood of developing Type 2 diabetes in adult women. This project will enable us to understand how demographic and environmental factors contribute to diabetes prevalence among adult women, enhancing diabetes prevention and management.
+
+## Data
+
+Our dataset includes 2,768 observations from the National Institute of Diabetes and Digestive and Kidney Diseases and Frankfurt Hospital, including anthropometric measurements (glucose level, BMI, blood pressure, etc.) alongside a binary diabetes outcome (1 - diabetic, 0 - not diabetic).
+
+In our analysis, we focus on several key variables due to their established correlation with diabetes risk. Elevated fasting plasma glucose levels are a primary indicator of diabetes risk, with studies such as Zhao et al. (2019) confirming that higher levels significantly increase the likelihood of developing type 2 diabetes. Blood pressure is another critical factor; hypertension is not only commonly associated with diabetes but also increases the risk of cardiovascular complications, making its management vital [@deboer2017]. Body Mass Index (BMI) is strongly linked to an increased risk of diabetes, as obesity contributes to insulin resistance, underscoring the importance of BMI in diabetes risk assessments (Klein et al., 2022).
+
+Additionally, the Diabetes Pedigree Function highlights a genetic predisposition through a family history of diabetes, which is often included in risk prediction models. This function scores the probability of diabetes based on family history, with a range from 0.08-2.42 in our data. Age is another significant factor, with the prevalence of type 2 diabetes increasing notably after age 45, necessitating regular screenings for older adults. The history of gestational diabetes in women suggests a higher risk of developing type 2 diabetes later, marking it as a critical factor in risk assessments. Lastly, abnormal insulin levels can indicate beta-cell dysfunction and insulin resistance, both precursors to diabetes, which is why measuring insulin is crucial in understanding an individual’s metabolic state. [@joshi2021] As indicated in Collier's research, an increase in skin thickness is significantly related to the duration of diabetes, therefore, it will be worthy to explore this variable. [@collier1989]
+
+## Exploratory Data Analysis
+
+```{r}
+knitr::kable(t(table(diabetes$Outcome)),
+      col.names = c("Non-diabetic: 0", "Diabetic: 1"),
+      caption = "Distribution of Diabetes Outcomes")
+```
+
+From our explanatory data analysis, we found that around 34% of our sample are patients diagnosed with diabetes. Our outcome variable is diabetes status, with `1` indicating yes and `0` indicating no.
+
+We explored the relationship between explanatory and our diabetes outcome variables. We included the effect of age and pregnancy status here as an example and found the median age and number of pregnancies is higher for those with diabetes compared to those without. The variability for age is similar across both statuses, but there is a significant number of outliers for those without diabetes. The variability for pregnancies is higher for those with diabetes.
+
+```{r, fig.height=2.5, fig.width=6, out.height="50%"}
+plot1 <- ggplot(diabetes, aes(x = factor(Outcome),
+                     y = Age,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Graph1:      Outcome vs. age",
+       x = "Diabetes status (1: Yes, 0: No)",
+       y = "Age") + 
+  theme_minimal() 
+
+
+plot2 <- ggplot(diabetes, aes(x = factor(Outcome),
+                     y = Pregnancies,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "pink") +
+  labs(title = "     Outcome vs. pregnancies",
+       x = "Diabetes status (1: Yes, 0: No)",
+       y = "Pregnancies") + 
+  theme_minimal() 
+
+grid.arrange(plot1, plot2, ncol = 2)
+
+```
+
+We also conducted EDA to explore interesting interaction effects such as glucose levels and the diabetes pedigree function, as previous literature has emphasized including family history in diabetes risk assessment, where glucose levels vary based on genetic background [@elbein1991].
+
+```{r, fig.height=3, fig.width=6, out.height="50%"}
+ggplot(diabetes, aes(x = Glucose_level, fill = factor(Outcome))) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Graph2: Glucose level vs. diabetes by Diabetes Pedigree Function Level",
+       y = "Proportion",
+       fill = "Outcome") + 
+  facet_wrap(~ DiabetesPedigreeFunction_level) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      size = 8,  
+      angle = 45, 
+      hjust = 1,  
+      vjust = 1  
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 11),
+    plot.title = element_text(size = 12),
+    strip.text = element_text(size = 11),  
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11)
+  ) +
+  theme(
+    plot.margin = margin(b = 20, unit = "pt")
+  )
+```
+
+We divided the diabetes pedigree functions (0.078-0.242) into five levels and glucose into ranges (0-50, 50-100, 100-150, 150-200) to analyze their interaction. At pedigree level 1, there seems to be a moderate correlation between glucose levels and diabetes risk. Level 2 shows a stronger relationship, with higher diabetes prevalence even at lower glucose ranges. Level 3 displays a steep increase in diabetes risk as glucose levels rise. Level 5 consistently shows high diabetes risk across all glucose ranges, with near-complete presence at lower glucose ranges. These patterns demonstrate that te impact of glucose levels on diabetes risk is not uniform but rather changes based on diabetes pedigree function level. See more interaction effect exploration in the Appendix ([Interaction Explorations EDA]).
+
+Additionally, we found that those with diabetes had much higher median levels of glucose. We also found that those with diabetes had slightly higher median blood pressure, median BMI, median age, and median skin thickness. We found that those with diabetes had lower median insulin, however. There was similar variability between diabetes/non-diabetes groups for blood pressure and BMI, and higher variability for diabetes group for the insulin and skin thickness. Please see appendix for EDA visualizations with all other variables ([Response vs. explanatory EDA]).
+
+# Methodology
+
+## Train-test data split
+
+People with diabetes are 1/3 of the whole data set, thus we decide to do 80-20 of the train-test split (a common heuristic in machine learning). Since we have sufficient samples of each, this is a relatively balanced choice that allows us to achieve a balance between training and testing accuracy.
+
+```{r}
+# Set a random seed for reproducibility
+set.seed(1234)
+
+split_index <- sample(1:nrow(diabetes), 0.8 * nrow(diabetes))
+
+# train data set
+diabetes_train <- diabetes[split_index, ]
+diabetes_test <- diabetes[-split_index, ]
+
+```
+
+Since our outcome is binary (1 & 0), we need to predict whether our selected predictor variables could predict whether the patient has diabetes or not. Thus, we apply logistic regression.
+
+## Assumptions for Logistic Regression
+
+Empirical logit analysis indicated that most variables met the linearity assumption with our response variable, except for `Insulin` , which was excluded due to insufficent data caused by a significant number of zero values ([Testing linearity assumption] in Appendix). The dataset, comprising randomly selected Pima Indian women and those in Frankfurt hospital aged 21 and older, supports assumptions for randomness and independence, as individuals were sampled without evident bias (age, blood pressure, etc.) and each observation represents unique measurements. These validations justify proceeding with logistic regression analysis.
+
+## Initial model
+
+Initially, we included all variables in our model (besides `Insulin`) to see which ones were/were not significant. We found that `SkinThickness` had a p-value much larger than $0.05$, so we decided to exclude it from the model. As seen in our model output, every predictor variable is statistically significant. We also checked the VIF between all variables, and found that all were below 10, indicating low multicollinearity. ([Full Model])
+
+```{r}
+model_train_2 <- glm(Outcome ~ Glucose + BloodPressure + BMI +
+                     DiabetesPedigreeFunction + Age + Pregnancies,
+                        data = diabetes_train,
+                        family = "binomial")
+```
+
+```{r}
+
+model_summary <- tidy(model_train_2, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values <- data.frame(
+  term = names(vif(model_train_2)),
+  VIF = vif(model_train_2)
+) 
+
+combined_table <- model_summary |>
+  left_join(vif_values, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table |>
+  kable(digits = 3,
+        caption = "Initial Model Exploration",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+We also computed the AIC and BIC for our model, which is $2173.037$ and $2212.955$. We will use these values to compare with other models in the following section.
+
+```{r}
+glance(model_train_2) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+```
+
+## Exploring Interaction Effects
+
+From our EDA, we saw prominent differences between each glucose level's proportion of diabetes by diabetes pedigree function levels, indicating a potential interaction effect. Therefore, we decided to fit a model including this effect. This model initially indicated VIF values of 17.07 and 19.29 for the diabetes pedigree function and its interaction term with age, which comes unsurprising given the known multicollinearity issues that arise when including interaction terms. (See [Original Interaction Term Output]).
+
+```{r}
+model_train_interaction_4 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Glucose*DiabetesPedigreeFunction,
+                    data = diabetes_train,
+                    family = "binomial")
+
+```
+
+```{r}
+
+model_summary_8 <- tidy(model_train_interaction_4, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_8 <- data.frame(
+  term = names(vif(model_train_interaction_4)),
+  VIF = vif(model_train_interaction_4)
+) 
+
+combined_table_8 <- model_summary_8 |>
+  left_join(vif_values_8, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+##combined_table_8 |>
+ ## kable(digits = 3,
+   ##     caption = "Model Summary for interaction Glucose x DiabetesPedigreeFunction",
+      ##  col.names = c("term", "estimate", "std.Error", "statistic", 
+   ##                  "p.value", "conf.low", "conf.high", "VIF"),
+      ##  align = c('l', rep('r', 7)))
+
+```
+
+For this reason, we decided to mean-center the data to address the multicollinearity (high VIF) introduced by adding the interaction term between Glucose and the Pedigree function. Mean-centering adjusts the predictors to have zero mean, which helps to minimize the correlation between them and their interaction terms. This adjustment is important for interpreting the interaction effects of DiabetesPedigreeFunction and Glucose without the confounding influence of high multicollinearity. Check [Mathematical Explanation of Mean Center Reducing the Multi-Collinearity]
+
+```{r}
+# Center the continuous variables 
+diabetes_train$Glucose_c <- diabetes_train$Glucose - mean(diabetes_train$Glucose) 
+diabetes_train$DiabetesPedigreeFunction_c <- diabetes_train$DiabetesPedigreeFunction - mean(diabetes_train$DiabetesPedigreeFunction) 
+
+model_train_interaction_4_transform <- glm(Outcome ~ Glucose_c + BloodPressure + BMI + DiabetesPedigreeFunction_c + Age + Pregnancies +  Glucose_c*DiabetesPedigreeFunction_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+model_summary_9 <- tidy(model_train_interaction_4_transform, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_9 <- data.frame(
+  term = names(vif(model_train_interaction_4_transform)),
+  VIF = vif(model_train_interaction_4_transform)
+) 
+
+combined_table_9 <- model_summary_9 |>
+  left_join(vif_values_9, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_9 |>
+  kable(digits = 3,
+         caption = "Model Summary for interaction Glucose_c x DiabetesPedigreeFunction_c",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+Without multicollinearity, we then checked the AIC/BIC for this transformed model:
+
+```{r}
+
+glance(model_train_interaction_4_transform) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+```
+
+Our AIC here is $2151.611$ and our BIC is $2197.232$. Our AIC here is lower than that of the model without the interaction term ($2173.037$), indicating that our new model with the interaction term fits the data better relative to its complexity. Our BIC here is also lower (compared to the previous model's $2212.955$, showing that the interaction term likely adds value to the model without over-fitting.
+
+We then conducted a drop-in deviance test to see if this interaction term is necessary. From the test, we can see that the p value is 0, meaning we have evidence to suggest our mean-centered `Glucose_c*DiabetesPedigreeFunction_c` is statistically significant in predicting diabetes outcome.
+
+```{r, size="8pt"}
+model_train_interaction_4_transform_reduced <-
+  glm(Outcome ~ Glucose_c + BloodPressure + BMI +
+        DiabetesPedigreeFunction_c + Age + Pregnancies,
+                    data = diabetes_train,
+                    family = "binomial")
+
+anova(model_train_interaction_4_transform_reduced,
+      model_train_interaction_4_transform, test = "Chisq") |>
+  tidy() |>
+    kable(digits = 3,
+          caption = "Drop-in-deviance-test",
+            col.names = c("term", "df.res", "dev.res",
+                          "df", "deviance", "p.value"),
+          align = rep('l', 3))|>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, width = "20em")
+
+```
+
+We also evaluated other interaction effects including `Glucose_c*BMI_c`, `Glucose_c*BloodPressure_c`, `Glucose_c*Age_c`,`Pregnancies_c*Age_c`, `Pregnancies*DiabetesPedigreeFunction.` (See [Interaction Term Model Testing]). All of the interaction terms are significant, so we compared AIC and BIC values for models including each interaction effect.
+
+```{r}
+model_comparison <- data.frame(
+  Model = c("Glucose_c*DiabetesPedigreeFunction_c",
+            "Glucose_c*Age_c",
+            "Glucose_c*BMI_c", 
+            "Glucose_c*BloodPressure_c",
+            "Pregnancies_c*Age_c",
+            "Pregnancies*DiabetesPedigreeFunction"),
+  AIC = c(2151.611, 2154.896, 2158.004, 2170.291, 2151.774, 2173.835),
+  BIC = c(2197.232, 2200.517, 2203.624, 2215.291, 2197.395, 2219.455)
+)
+
+# Create table using kable
+knitr::kable(model_comparison,
+             digits = 3,
+             caption = "Model Comparison Statistics",
+             align = c('l', 'r', 'r'))
+
+```
+
+Our AIC/BIC table of all interaction models indicate that the model including an interaction between Pedigree Function and Glucose provides us the smallest AIC/BIC values. The inclusion of this variable is reasonable due to the well-documented relationship between a patient's genetic predisposition and glucose metabolism to diabetes risk. Thus, we believe that this model is ideal for testing in our project.
+
+## Cook's Distance
+
+We calculated Cook's distance for each observation in our final model configuration to ensure the strength and reliability of our model.
+
+```{r, fig.height=3, fig.width=7}
+
+# Assuming model_train_interaction_1_transform is your model
+cooks_d <- cooks.distance(model_train_interaction_4_transform)
+
+# Create basic plot with ggplot2
+ggplot(data.frame(obs = 1:length(cooks_d), cooksd = cooks_d), 
+       aes(x = obs, y = cooksd)) +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 1, color = "red", linetype = "solid") +
+  geom_hline(yintercept = 0.5, color = "blue", linetype = "dashed") +
+  labs(x = "Observation Number",
+       y = "Cook's Distance",
+       title = "Graph3:                 Cook's distance diagnostic ") +
+  theme_minimal()
+```
+
+As illustrated, none of the data points exceed the commonly used threshold of 0.5, indicating there are no influential points in this model. This suggests that there is no single data point that may skew the overall model, allowing us to conclude that our model is a good fit.
+
+# Results
+
+## Interpretation
+
+```{r}
+tidy(model_train_interaction_4_transform) |>
+  kable(digits = 3,
+        caption = "Model Interpretation")
+```
+
+Our analysis confirms that all predictors except age in our model are statistically significant ($p < 0.05$), showing a mix of positive and negative effects on diabetes risk. As the number of pregnancies increases by 1 pregnancy, the odds of having diabetes increases by $13$% ($e^{0.129}$) holding all else constant. Similarly, when the mean-centered diabetes pedigree function increases by 1 unit, the odds of having diabetes is multiplied by a factor of $2.90$ ($e^{1.067}$) holding all else constant. BMI also plays a role in increasing the risk of diabetes, with BMI increasing the odds by about 8.2% $(e^{0.079})$ . Thus, our model indicates that women with more pregnancies, a stronger family predisposition, and higher BMI may be more at-risk of having diabetes.
+
+On the other hand, Blood Pressure has a slight negative association with diabetes risk. This finding is particularly intriguing as it suggests that higher blood pressure may slightly reduce the risk of diabetes, counterintuitive to what might be expected. The magnitude of this effect is quite small (each unit increase in blood pressure is associated with only about a 1% decrease in diabetes odds), and examining our EDA plots reveals considerable variability in the blood pressure-diabetes relationship. This might suggest that this finding may reflect limitations in our dataset or unmeasured confounding factors. For instance, patients with known high blood pressure may be under closer medical supervision and lifestyle management, potentially affecting their diabetes risk, thus making our model having a negative coefficient. Additionally, our merged dataset from two different sources (Pima Indian and Frankfurt hospital populations) may introduce complexities in blood pressure measurement and recording that affect this relationship.
+
+There is also a significantly negative interaction between Glucose_c and DiabetesPedigreeFunction_c (Glucose_c:DiabetesPedigreeFunction_c), suggesting that the effect of glucose on diabetes risk differs by family diabetes history; more specifically, as diabetes pedigree function goes up, the impact of glucose on diabetes risk slightly decreases, holding all else constant. This demonstrates how strong genetic predisposition to diabetes can lead to disease development even without severely elevated glucose levels.
+
+## Model Testing
+
+We applied our model on the testing set and fit an ROC curve with threshold of 0.5 and calculated the area under curve. Our ROC curve's AUC value of 0.831 suggests that our model with mean-centered variables and interaction terms has good predictive ability in predicting diabetes status, correctly ranking a randomly chosen positive case higher than a randomly chosen negative case 83.1% of the time. The curve's shape also confirms a strong predictive performance.
+
+```{r}
+diabetes_test$Glucose_c <- diabetes_test$Glucose - mean(diabetes_test$Glucose)
+diabetes_test$DiabetesPedigreeFunction_c <- diabetes_test$DiabetesPedigreeFunction - mean(diabetes_test$DiabetesPedigreeFunction)
+```
+
+```{r}
+model_aug <- augment(model_train_interaction_4_transform)
+
+pred_prob <- predict.glm(model_train_interaction_4_transform,
+                         type = "response",
+                         newdata = diabetes_test)
+
+pred_prob <- as.vector(pred_prob)
+
+diabetes_test$pred_prob <- pred_prob
+```
+
+```{r, fig.height=2, fig.width=4, fig.align='center'}
+
+model_aug$Outcome_factor <- as.factor(model_aug$Outcome)
+
+roc_curve_data <- model_aug |>
+  roc_curve(Outcome_factor, .fitted,
+            event_level = "second")
+
+autoplot(roc_curve_data) +
+  theme_minimal() +
+  theme(
+    panel.spacing = unit(0.2, "cm"),
+    text = element_text(size = 5),
+    axis.title = element_text(size = 5),
+    axis.text = element_text(size = 5)
+  ) + labs(
+    title = "Graph 4: ROC Curve"
+  )
+```
+
+```{r, fig.height=3, fig.width=6, out.height="50%"}
+roc_auc_result <- model_aug |>
+  roc_auc(Outcome_factor, .fitted,
+          event_level = "second") |>
+  kable(
+    digits = 3,
+    col.names = c("Metric", "Estimator", "Estimate"),
+    caption = "Model ROC-AUC Score",
+    align = c('l', 'l', 'r') 
+  )
+
+roc_auc_result
+```
+
+We then used a confusion matrix to summarize our model's predictability. We initially chose a threshold of 0.5, and arrived at an accuracy rating of 79.6%, sensitivity rate of 62.7%, and specificity rate of 88.1%. The lower sensitivity rate indicates that only 62.7% of people with diabetes were correctly classified by our model as having diabetes.
+
+```{r}
+# use threshold of 0.5
+diabetes_test$predicted_class <- ifelse(diabetes_test$pred_prob >= 0.5, "1", "0")
+
+confusion_matrix_1 <- table(Predicted = diabetes_test$predicted_class,
+                            Actual = diabetes_test$Outcome)
+
+confusion_matrix_1 %>%
+  kable(
+    caption = "Confusion Matrix (Threshold: 0.5)",
+    col.names = c("Actual 0", "Actual 1")
+  )
+
+```
+
+Despite the high accuracy (proportion of individuals diabetes status correctly classified) and specificity rate (proportion of people without diabetes correctly classified), we decided to lower our threshold and chose 0.25. We believe that a higher sensitivity rate is more important than specificity because we prioritize correctly classifying patients with diabetes as having diabetes. Adopting this approach minimizes harm to potential patients, as misdiagnosing a patient without diabetes as diabetic, while not ideal, typically involves reversible risks once the error is identified. In contrast, incorrectly diagnosing a patient who actually has diabetes as healthy can delay necessary treatment, leading to severe complications and increased mortality risk.
+
+```{r}
+# use threshold of 0.25
+diabetes_test$predicted_class_lower <- ifelse(diabetes_test$pred_prob >= 0.25, "1", "0")
+
+confusion_matrix_2 <- table(Predicted = diabetes_test$predicted_class_lower,
+                            Actual = diabetes_test$Outcome)
+
+confusion_matrix_2 %>%
+  kable(
+    caption = "Confusion Matrix (Threshold: 0.25)",
+    col.names = c("Actual 0", "Actual 1")
+  )
+```
+
+By using a threshold of 0.25, our sensitivity rate increases to $87$%. Our accuracy rate is now $71.5$%, and our specificity rate is $63.69$%. With this threshold, 87% of the people with diabetes are correctly classified as having diabetes.
+
+# Discussion
+
+## Summary
+
+In our study, we examined how various factors affect the risk of diabetes by using a logistic regression model. Our findings highlight the significant role of genetic predisposition, as measured by the Diabetes Pedigree Function, and lifestyle factors like high BMI and number of pregnancies in increasing the likelihood of diabetes. Interestingly, our model revealed a negative association between blood pressure and diabetes risk, suggesting that higher blood pressure may slightly reduce the odds of diabetes. We also concluded that the negative interaction effect between glucose levels and genetic predisposition is significant, demonstrating the complexity of risk factors and points to the need for further research to fully understand the underlying mechanisms. Our approach prioritizes sensitivity in diagnosis and recognizes the severe implications of misdiagnosing diabetes, even if that signifies a slight decline in the accuracy of our model.
+
+## Limitations
+
+Our study uses a dataset that merges information from the Pima population and the Frankfurt hospital, which introduces challenges related to the generalizability and consistency in measurements. While merging these data sources does increase the diversity and size of our sample, it increases the difficulty in comparing these measurements. For instance, differences in equipment or how tests like blood pressure and glucose levels are conducted might influence our results. These potential inconsistencies need to be considered, as they could limit how much we can generalize our findings to other populations or contexts.
+
+In addition, even though the merged dataset is frequently cited by researchers, there is limited information on how the data from the Pima Indians and the Frankfurt hospital were combined. Without detailed documentation on the merging process, it's unclear whether the datasets were integrated using a perfectly consistent criteria. The lack of information also extends to how data normalization was conducted, especially for a binary outcome like diabetes, which is often diagnosed based on a range of measurements.
+
+Finally, we excluded insulin level from our model because of the lack of data. As indicated by Joshi, insulin levels does play a role in the outcome of diabetes. Therefore, to address this variable, we may need to explore alternative modeling strategies or transformations of the insulin variable.
+
+## Future Research
+
+In our model, we excluded Skin Thickness due to its high p value, as indicated in our initial model. This is the only variable that was removed from the dataset and is not a significant predictor of the likelihood of developing Type 2 diabetes in women. Although previous studies indicating that skin thickness was related to duration of diabetes, it would be worth it to further explore this variable's relationship with predicting an individual's diabetes outcome.
+
+In addition, to address the negative association between blood pressure and diabetes outcomes identified in our study, future research involving a larger, more diverse dataset to validate our findings and take account into potential confounders may be essential. Assembling data that includes additional lifestyle factors, such as diet, physical activity, smoking habits, and alcoholic consumption can also enhance our understanding their impact on metabolic health and blood pressure, and thus, be able to reveal more complex relationships between predictors and diabetes outcome.
+
+Because of our merged data set, by analyzing the data from the Pima Indians and the Frankfurt hospital independently, we can uncover more risk factors and health outcomes specific to each group. This approach can reveal how environmental, lifestyle, and genetic factors uniquely contribute to the diabetes risk, as these populations are very different, with the Pima peoples having one of the highest diabetes rate in the world while Germany being around the same as the global average.
+
+Finally, analyzing longitudinal studies (using data collected for A1C tests, which measure average glucose over 2-3 months) would allow us to track the progression of diabetes over time, revealing how the disease develops and responds to different interventions. This would improve our understanding of both blood pressure-diabetes dynamics and long-term risk factor impacts, ultimately advancing personalized diabetes prevention and treatment strategies.
+
+\newpage
+
+# Appendix
+
+## Response vs. explanatory EDA
+
+Relationship between Outcome and Glucose:
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = Glucose,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "pink") +
+  labs(x = "Diabetes outcome- 1: yes, 0: no",
+       y = "Glucose",
+       title = "Graph5:                Glucose vs. diabetes outcome") +
+  theme_minimal()
+```
+
+This could tell us that Glucose has a strong effect on having diabetes.
+
+Relationship between Outcome and Blood Pressure:
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = BloodPressure,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Graph6:                   Blood pressure vs. diabetes") + 
+  theme_minimal()
+```
+
+Relationship between Outcome and BMI:
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = BMI,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightpink") +
+  labs(title = "Graph7:                         BMI vs. diabetes") +
+  theme_minimal()
+```
+
+Relationship between Outcome and DiabetesPedigreeFunction:
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = DiabetesPedigreeFunction,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Graph8:                    Diabetes pedigree function vs. diabetes") + 
+  theme_minimal()
+```
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = Insulin,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Graph9:                     Insulin vs. diabetes") + 
+  theme_minimal()
+```
+
+```{r}
+ggplot(diabetes, aes(x = factor(Outcome),
+                     y = SkinThickness,
+                     fill = factor(Outcome))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Graph10:                  Skin thickness vs. diabetes") + 
+  theme_minimal()
+```
+
+## Interaction Explorations EDA
+
+```{r}
+ggplot(diabetes, aes(x = Glucose_level, fill = factor(Outcome))) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Graph11:       Glucose level vs. diabetes by BMI level",
+       y = "proportion") + 
+  facet_wrap(~ BMI_level) +
+  theme_minimal() +
+   theme(
+    axis.text.x = element_text(
+      size = 8,  
+      angle = 45, 
+      hjust = 1,  
+      vjust = 1  
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 11),
+    plot.title = element_text(size = 12),
+    strip.text = element_text(size = 11),  
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11)
+  ) +
+  theme(
+    plot.margin = margin(b = 20, unit = "pt")
+  )
+```
+
+The proportion of individuals with diabetes varies noticeably across the BMI categories. For higher BMI levels (e.g., groups 4 and 5), the likelihood of diabetes increases more dramatically with higher glucose levels than it does in lower BMI levels (e.g., group 1).
+
+```{r}
+ggplot(diabetes, aes(x = Glucose_level, fill = factor(Outcome))) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Graph12:        Glucose level vs. diabetes by blood pressure level",
+       y = "proportion") + 
+  facet_wrap(~ BloodPressure_level) +
+  theme_minimal() +
+   theme(
+    axis.text.x = element_text(
+      size = 8,  
+      angle = 45, 
+      hjust = 1,  
+      vjust = 1  
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 11),
+    plot.title = element_text(size = 12),
+    strip.text = element_text(size = 11),  
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11)
+  ) +
+  theme(
+    plot.margin = margin(b = 20, unit = "pt")
+  )
+```
+
+The proportions of outcomes differ depending on blood pressure levels. For certain blood pressure levels, the likelihood of diabetes (proportion of Outcome = 1) increases with higher glucose levels. However, the pattern is not consistent across all blood pressure groups. This suggests that blood pressure levels may play a role in moderating the relationship between glucose levels and diabetes.
+
+```{r}
+ggplot(diabetes, aes(x = Glucose_level, fill = factor(Outcome))) + 
+  geom_bar(position = "fill") + 
+  labs(title = "Graph13:              Glucose level vs. diabetes by diabetes pedigree level",
+       y = "proportion") + 
+  facet_wrap(~ DiabetesPedigreeFunction_level) +
+  theme_minimal() + 
+   theme(
+    axis.text.x = element_text(
+      size = 8,  
+      angle = 45, 
+      hjust = 1,  
+      vjust = 1  
+    ),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 11),
+    plot.title = element_text(size = 12),
+    strip.text = element_text(size = 11),  
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11)
+  ) +
+  theme(
+    plot.margin = margin(b = 20, unit = "pt")
+  )
+```
+
+In groups 4 and 5 (higher diabetes pedigree levels), individuals with higher glucose levels (121–200) are overwhelmingly associated with diabetes (Outcome = 1). These groups show a striking shift in the proportion toward Outcome = 1 at higher glucose levels, as compared to more gradual increases in groups 1, 2, and 3, indicating a potential interaction effect.
+
+## Full Model
+
+```{r}
+model_train <-  glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + SkinThickness,
+                    data = diabetes_train,
+                    family = "binomial")
+
+tidy(model_train, conf.int = TRUE) |>
+  kable(digits = 3,
+        caption = "Model Exploration")
+```
+
+```{r}
+tidy(vif(model_train)) |>
+  kable(digits = 3,
+        caption = "VIF for initial model")
+```
+
+## Adding Interaction Terms
+
+For each interaction term, we check the interaction term through adding it to the model, check the multicollinearity, mean-center the interaction variables, and then conduct a drop-in deviance test.
+
+### Original Interaction Term Output
+
+```{r}
+combined_table_8 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Glucose x DiabetesPedigreeFunction",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                      "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+### Mathematical Explanation of Mean Center Reducing the Multi-Collinearity
+
+Consider a model with variables $X_1$, $X_2$, and their interaction $X_1X_2$. The model can be written as:
+
+$y \sim X_1 + X_2 + X_1X_2$
+
+After mean-centering, each variable becomes its deviation from the mean:
+
+$y \sim (X_1-\bar{X_1}) + (X_2-\bar{X_2}) + (X_3-\bar{X_3})$
+
+where $X_3 = X_1X_2$
+
+The correlation between mean-centered variables can be expressed as:
+
+$\text{Corr}(X_1, X_2) = \text{Cor}(X_1-\bar{X_1}, X_2-\bar{X_2})$
+
+For the interaction term:
+
+$\text{Corr}(X_1, X_1X_2) = \text{Cor}(X_1-\bar{X_1}, X_1X_2-\overline{X_1X_2})$
+
+$\neq \text{Cor}(X_1-\bar{X_1}, (X_1-\bar{X_1})(X_2-\bar{X_2}))$
+
+This transformation reduces multicollinearity because the centered interaction term $(X_1X_2-\overline{X_1X_2})$ is less correlated with the individual centered variables $(X_1-\bar{X_1})$ and $(X_2-\bar{X_2})$ than in the uncentered case.
+
+### Interaction Term Model Testing
+
+#### Glucose X BMI
+
+Checking the interaction effect between Glucose and BMI.
+
+```{r}
+model_train_interaction_2 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Glucose*BMI,
+                    data = diabetes_train,
+                    family = "binomial")
+
+```
+
+```{r}
+
+model_summary_4 <- tidy(model_train_interaction_2, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_4 <- data.frame(
+  term = names(vif(model_train_interaction_2)),
+  VIF = vif(model_train_interaction_2)
+) 
+
+combined_table_4 <- model_summary_4 |>
+  left_join(vif_values_4, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_4 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Glucose x BMI",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+Transforming the variable through mean-centering.
+
+```{r}
+diabetes_train$BMI_c <- diabetes_train$BMI - mean(diabetes_train$BMI) 
+
+model_train_interaction_2_transform <- glm(Outcome ~ Glucose_c +
+            BloodPressure + BMI_c + DiabetesPedigreeFunction + Age +
+              Pregnancies + Glucose_c*BMI_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+```
+
+```{r}
+
+model_summary_5 <- tidy(model_train_interaction_2_transform, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_5 <- data.frame(
+  term = names(vif(model_train_interaction_2_transform)),
+  VIF = vif(model_train_interaction_2_transform)
+) 
+
+combined_table_5 <- model_summary_5 |>
+  left_join(vif_values_5, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_5 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Gluocose_c x BMI_c",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+```{r}
+glance(model_train_interaction_2_transform) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+```
+
+```{r}
+
+model_train_interaction_2_transform_reduced <- glm(Outcome ~ Glucose_c +
+              BloodPressure + BMI_c + DiabetesPedigreeFunction + Age +
+                Pregnancies,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+anova(model_train_interaction_2_transform_reduced,
+      model_train_interaction_2_transform, test = "Chisq") |>
+  tidy() |>
+    kable(digits = 3,
+          caption = "Drop-in-deviance-test",
+            col.names = c("term", "df.res", "dev.res",
+                          "df", "deviance", "p.value"),
+          align = rep('l', 3))|>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, width = "20em")
+```
+
+#### Glucose X Blood Pressure
+
+Checking the interaction effect between Glucose and BloodPressure:
+
+```{r}
+model_train_interaction_3 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Glucose*BloodPressure,
+                    data = diabetes_train,
+                    family = "binomial")
+
+```
+
+BloodPressure is no longer statistically significant here, probably due to the high multi-collinearity.
+
+```{r}
+
+model_summary_6 <- tidy(model_train_interaction_3, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_6 <- data.frame(
+  term = names(vif(model_train_interaction_3)),
+  VIF = vif(model_train_interaction_3)
+) 
+
+combined_table_6 <- model_summary_6 |>
+  left_join(vif_values_6, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_6 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Glucose x BloodPressure",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+```{r}
+diabetes_train$BloodPressure_c <- diabetes_train$BloodPressure - mean(diabetes_train$BloodPressure) 
+
+model_train_interaction_3_transform <- glm(Outcome ~ Glucose_c + BloodPressure_c + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Glucose_c*BloodPressure_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+model_summary_7 <- tidy(model_train_interaction_3_transform, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_7 <- data.frame(
+  term = names(vif(model_train_interaction_3_transform)),
+  VIF = vif(model_train_interaction_3_transform)
+) 
+
+combined_table_7 <- model_summary_7 |>
+  left_join(vif_values_7, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_7 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Glucose_c x BloodPressure_c",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+After the transformation, BloodPressure_c is significant again.
+
+```{r}
+glance(model_train_interaction_3_transform) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+```
+
+```{r}
+model_train_interaction_3_transform_reduced <- glm(Outcome ~ Glucose_c + BloodPressure_c + BMI + DiabetesPedigreeFunction + Age + Pregnancies,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+anova(model_train_interaction_3_transform_reduced,
+      model_train_interaction_3_transform, test = "Chisq") |>
+  tidy() |>
+    kable(digits = 3,
+          caption = "Drop-in-deviance-test",
+            col.names = c("term", "df.res", "dev.res",
+                          "df", "deviance", "p.value"),
+          align = rep('l', 3))|>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, width = "20em")
+```
+
+#### Glucose X Age
+
+Checking the interaction between the Glucose and Age
+
+```{r}
+
+model_train_interaction_1 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Glucose*Age,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+```
+
+```{r}
+
+model_summary_2 <- tidy(model_train_interaction_1, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_2 <- data.frame(
+  term = names(vif(model_train_interaction_1)),
+  VIF = vif(model_train_interaction_1)
+) 
+
+combined_table_2 <- model_summary_2 |>
+  left_join(vif_values_2, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_2 |>
+  kable(digits = 3,
+        caption = "Model Summary for Glucose x Age",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+```
+
+```{r}
+diabetes_train$DiabetesPedigreeFunction_c <- diabetes_train$DiabetesPedigreeFunction - mean(diabetes_train$DiabetesPedigreeFunction) 
+diabetes_train$Age_c <- diabetes_train$Age - mean(diabetes_train$Age) 
+
+model_train_interaction_1_transform <- glm(Outcome ~ Glucose_c + BloodPressure + BMI + DiabetesPedigreeFunction + Age_c + Pregnancies + Glucose_c*Age_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+model_summary_3 <- tidy(model_train_interaction_1_transform, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_3 <- data.frame(
+  term = names(vif(model_train_interaction_1_transform)),
+  VIF = vif(model_train_interaction_1_transform)
+) 
+
+combined_table_3 <- model_summary_3 |>
+  left_join(vif_values_3, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_3 |>
+  kable(digits = 3,
+        caption = "Model Summary for Glucose_c x Age_c",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+
+```
+
+```{r}
+glance(model_train_interaction_1_transform) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+
+```
+
+```{r}
+model_train_interaction_1_transform_reduced <-
+  glm(Outcome ~ Glucose_c + BloodPressure + BMI +
+        DiabetesPedigreeFunction + Age_c + Pregnancies,
+                    data = diabetes_train,
+                    family = "binomial")
+
+anova(model_train_interaction_1_transform_reduced,
+      model_train_interaction_1_transform, test = "Chisq") |>
+  tidy() |>
+    kable(digits = 3,
+          caption = "Drop-in-deviance-test",
+            col.names = c("term", "df.res", "dev.res",
+                          "df", "deviance", "p.value"),
+          align = rep('l', 3))|>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, width = "20em")
+```
+
+#### Pregnancies X Age
+
+check the interaction between pregnancy and age:
+
+```{r}
+model_train_interaction_5 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Pregnancies*Age,
+                    data = diabetes_train,
+                    family = "binomial")
+
+```
+
+```{r}
+model_summary_10 <- tidy(model_train_interaction_5, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_10 <- data.frame(
+  term = names(vif(model_train_interaction_5)),
+  VIF = vif(model_train_interaction_5)
+) 
+
+combined_table_10 <- model_summary_10 |>
+  left_join(vif_values_10, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_10 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Age x Pregnancies",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+
+```
+
+```{r}
+diabetes_train$Pregnancies_c <- diabetes_train$Pregnancies - mean(diabetes_train$Pregnancies) 
+
+model_train_interaction_5_transform <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age_c + Pregnancies_c + Pregnancies_c*Age_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+model_summary_11 <- tidy(model_train_interaction_5_transform, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_11 <- data.frame(
+  term = names(vif(model_train_interaction_5_transform)),
+  VIF = vif(model_train_interaction_5_transform)
+) 
+
+combined_table_11 <- model_summary_11 |>
+  left_join(vif_values_11, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_11 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction Age_c x Pregnancies_c",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+
+```
+
+```{r}
+glance(model_train_interaction_5_transform) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+
+```
+
+```{r}
+model_train_interaction_5_transform_reduced <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age_c + Pregnancies_c,
+                    data = diabetes_train,
+                    family = "binomial")
+
+
+anova(model_train_interaction_5_transform_reduced,
+      model_train_interaction_5_transform, test = "Chisq") |>
+  tidy() |>
+    kable(digits = 3,
+          caption = "Drop-in-deviance-test",
+            col.names = c("term", "df.res", "dev.res",
+                          "df", "deviance", "p.value"),
+          align = rep('l', 3))|>
+  kable_styling(full_width = FALSE) |>
+  column_spec(1, width = "20em")
+
+```
+
+#### Pregnancies X DiabetesPedigreeFunction
+
+check the interaction effect between Pregnancies and DiabetesPedigreeFunction
+
+```{r}
+model_train_interaction_6 <- glm(Outcome ~ Glucose + BloodPressure + BMI + DiabetesPedigreeFunction + Age + Pregnancies + Pregnancies*DiabetesPedigreeFunction,
+                    data = diabetes_train,
+                    family = "binomial")
+```
+
+```{r}
+model_summary_12 <- tidy(model_train_interaction_6, conf.int = TRUE) |>
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high)
+
+vif_values_12 <- data.frame(
+  term = names(vif(model_train_interaction_6)),
+  VIF = vif(model_train_interaction_6)
+) 
+
+combined_table_12 <- model_summary_12 |>
+  left_join(vif_values_12, by = "term") |>
+  mutate(across(where(is.numeric), ~round(., 3))) 
+
+combined_table_12 |>
+  kable(digits = 3,
+        caption = "Model Summary for interaction DiabetesPedigreeFunction x Pregnancies",
+        col.names = c("term", "estimate", "std.Error", "statistic", 
+                     "p.value", "conf.low", "conf.high", "VIF"),
+        align = c('l', rep('r', 7)))
+
+```
+
+```{r}
+glance(model_train_interaction_6) |>
+  kable(
+    digits = 3,
+    col.names = c("Null Deviance", "df Null", "Log Likelihood",
+                  "AIC", "BIC", "Deviance",
+                  "df Residual", "Observations"),
+    caption = "Model Summary Statistics",
+    align = rep('r', 8) 
+  )
+```
+
+## Testing linearity assumption
+
+Use empirical logit graph between outcome and age:
+
+Age vs. Outcome
+
+```{r}
+diabetes |>
+  mutate(Age_bin = cut_number(Age, n = 10)) |>
+  group_by(Age_bin) |>
+  mutate(mean_age = mean(Age)) |>
+  count(mean_age, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_age,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean Age",
+       y = "Empirical logit",
+       title = "Graph14:               Empirical logit of Outcome vs. Age") + 
+  theme_minimal()
+```
+
+Glucose vs. Outcome
+
+```{r}
+diabetes |>
+  mutate(Glucose_bin = cut_number(Glucose, n = 10)) |>
+  group_by(Glucose_bin) |>
+  mutate(mean_glucose = mean(Glucose)) |>
+  count(mean_glucose, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_glucose,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean Glucose",
+       y = "Empirical logit",
+       title = "Graph15:                Empirical logit of Outcome vs. Glucose") + 
+  theme_minimal()
+```
+
+BloodPressure vs. Outcome:
+
+```{r}
+diabetes |>
+  mutate(bp_bin = cut_number(BloodPressure, n = 10)) |>
+  group_by(bp_bin) |>
+  mutate(mean_bp = mean(BloodPressure)) |>
+  count(mean_bp, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_bp,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean BloodPressure",
+       y = "Empirical logit",
+       title = "Graph16:            Empirical logit of Outcome vs. BloodPressure") + 
+  theme_minimal()
+```
+
+BMI vs. Outcome
+
+```{r}
+diabetes |>
+  mutate(bmi_bin = cut_number(BMI, n = 10)) |>
+  group_by(bmi_bin) |>
+  mutate(mean_bmi = mean(BMI)) |>
+  count(mean_bmi, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_bmi,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean BMI",
+       y = "Empirical logit",
+       title = "Graph17:                  Empirical logit of Outcome vs. BMI") + 
+  theme_minimal()
+```
+
+DiabetesPedigreeFunction vs. Outcome:
+
+```{r}
+diabetes |>
+  mutate(dpf_bin = cut_number(DiabetesPedigreeFunction, n = 10)) |>
+  group_by(dpf_bin) |>
+  mutate(mean_dpf = mean(DiabetesPedigreeFunction)) |>
+  count(mean_dpf, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_dpf,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean DiabetesPedigreeFunction",
+       y = "Empirical logit",
+       title = "Graph18:            Empirical logit of Outcome vs. DiabetesPedigreeFunction") + 
+  theme_minimal()
+```
+
+Pregnancies vs. Outcome:
+
+```{r}
+diabetes |>
+  mutate(pre_bin = cut_number(Pregnancies, n = 6)) |>
+  group_by(pre_bin) |>
+  mutate(mean_pre = mean(Pregnancies)) |>
+  count(mean_pre, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_pre,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean Pregnancies",
+       y = "Empirical logit",
+       title = "Graph19:             Empirical logit of Outcome vs. Pregnancies") + 
+  theme_minimal()
+```
+
+Insulin vs. Outcome:
+
+```{r}
+diabetes |>
+  mutate(ins_bin = cut_number(Insulin, n = 2)) |>
+  group_by(ins_bin) |>
+  mutate(mean_ins = mean(Insulin)) |>
+  count(mean_ins, Outcome) |>
+  mutate(prop = n/sum(n)) |>
+  filter(Outcome == "1") |>
+  mutate(emp_logit = log(prop/(1-prop))) |>
+  ggplot(aes(x = mean_ins,
+             y = emp_logit)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Mean Insulin",
+       y = "Empirical logit",
+       title = "Graph20:              Empirical logit of Outcome vs. Insulin") + 
+  theme_minimal()
+```
+
+There is not enough data for insulin in the data set to assume a linear relationship.
+
+```{r}
+
+diabetes |>
+  filter(Insulin == 0) |>
+  nrow()
+```
+
+1,330 of the `Insulin` data points are 0, making it heavily skewed.
+
+## Citations
